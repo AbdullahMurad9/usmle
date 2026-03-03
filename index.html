@@ -330,6 +330,40 @@ body {
 input, select, button {
   font-size: 15px;
 }
+.topic-block { margin-bottom: 14px; }
+      .topic-main {
+        font-weight: 700; font-size: 15px;
+        color: #1a3a5c; margin-bottom: 6px;
+        cursor: pointer; user-select: none;
+      }
+      .topic-main:hover { text-decoration: underline; }
+      .topic-sub { margin-left: 14px; margin-bottom: 10px; }
+      .topic-sub-heading {
+        font-weight: 600; font-size: 13px;
+        color: #2c76b3; margin-bottom: 4px;
+        margin-top: 6px;
+      }
+      .topic-row { margin-left: 14px; margin-bottom: 6px; }
+      .topic-row-label {
+        font-size: 12px; color: #444;
+        display: flex; justify-content: space-between;
+        margin-bottom: 3px;
+      }
+      .topic-row-label span { font-weight: 600; }
+      .topic-progress-bar {
+        height: 8px; border-radius: 999px;
+        background: #d0dce8; overflow: hidden;
+      }
+      .topic-progress-bar > div {
+        height: 100%; border-radius: 999px;
+        background: #2c76b3; transition: width 0.4s;
+      }
+      .topic-progress-bar > div.high { background: #2ecc71; }
+      .topic-progress-bar > div.mid { background: #f1c40f; }
+      .topic-progress-bar > div.low { background: #e74c3c; }
+      .topic-acc {
+        font-size: 11px; color: #888; margin-top: 2px;
+      }
     </style>
   </head>
   <body>
@@ -402,6 +436,14 @@ input, select, button {
                 </select>
                 <div class="small" id="poolInfo"></div>
               </div>
+              <div>
+               <label for="testNameInput">Test Name</label>
+                <input
+                  id="testNameInput"
+                  type="text"
+                  placeholder="e.g. CVS Mock 1"
+                      />
+                 </div>
               <div style="flex: 0 0 auto">
                 <button class="primary" id="startBtn">Start Test</button>
               </div>
@@ -475,6 +517,7 @@ input, select, button {
 
         <div class="actions">
           <button class="primary" id="submitBtn" type="button">Submit</button>
+          <button id="prevBtn" type="button" class="hidden">Previous</button>
           <button id="nextBtn" type="button" class="hidden">Next</button>
           <button id="finishBtn" type="button" class="hidden">Finish</button>
           <button class="ghost" id="quitBtn" type="button">Quit test</button>
@@ -506,6 +549,7 @@ input, select, button {
             <div class="num" id="resScore">0%</div>
             <div class="lbl">Score</div>
           </div>
+   
         </div>
 
         <div class="actions">
@@ -527,6 +571,15 @@ input, select, button {
             <div id="wrongList" style="margin-top: 10px"></div>
           </details>
         </div>
+       </div>
+        <div class="panel">
+        <h2 style="font-size:16px;">📊 Topic Progress</h2>
+        <div id="topicProgressList"></div>
+      </div>
+
+        <div class="panel">
+        <h2 style="font-size:16px;">📚 Test Library</h2>
+        <div id="testLibraryList"></div>
       </div>
     </div>
 
@@ -577,10 +630,12 @@ input, select, button {
       function loadState() {
         const raw = localStorage.getItem(STORAGE_KEY);
         const st = safeJsonParse(raw, null) || {
-          v: 1,
-          byId: {},
-          lastTest: null,
-        };
+  v: 1,
+  byId: {},
+  lastTest: null,
+  testLibrary: []   // 👈 NEW
+};
+if (!st.testLibrary) st.testLibrary = [];
         if (!st.byId) st.byId = {};
         return st;
       }
@@ -722,6 +777,7 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         el("statCorrect").textContent = s.correct;
         el("statWrong").textContent = s.wrong;
         el("statAcc").textContent = s.acc + "%";
+        renderTopicProgress();
       }
 
       // function topicMatches(q, topic) {
@@ -934,6 +990,70 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         el("submitBtn").classList.remove("hidden");
         el("nextBtn").classList.add("hidden");
         el("finishBtn").classList.add("hidden");
+        if (session.idx > 0) el("prevBtn").classList.remove("hidden");
+        else el("prevBtn").classList.add("hidden");
+
+        const already = session.answers[qid];
+        if (already) {
+          if (already && already.choice != null) {
+          // already answered — lock and show result
+          const radios = el("options").querySelectorAll("input[type=radio]");
+          radios.forEach(r => r.disabled = true);
+          const r = el("options").querySelector(`input[value="${already.choice}"]`);
+          if (r) r.checked = true;
+          markOptions(getQuestionById(qid), already.choice);
+          el("submitBtn").classList.add("hidden");
+          el("explainWrap").classList.remove("hidden");
+          el("explanation").innerHTML = getQuestionById(qid).explanationHtml || "<i>(No explanation)</i>";
+          let msg = already.correct === true ? "Correct ✅" : "Wrong ❌";
+          let cls = already.correct === true ? "good" : "bad";
+          el("feedback").textContent = msg;
+          el("feedback").style.display = "block";
+          el("feedback").className = cls;
+          if (session.idx < session.ids.length - 1)
+          el("nextBtn").classList.remove("hidden");
+          else el("finishBtn").classList.remove("hidden");
+          }
+         }
+        if (session.idx > 0) el("prevBtn").classList.remove("hidden");
+        else el("prevBtn").classList.add("hidden");
+
+        if (session.mode === "review") {
+          const saved = session.answers[q.id];
+          const picked = saved ? saved.choice : null;
+
+          // restore selected radio visually
+          if (picked != null) {
+            const r = el("options").querySelector(`input[value="${picked}"]`);
+            if (r) r.checked = true;
+          }
+
+          // lock all options so they can't be changed
+          const radios = el("options").querySelectorAll("input[type=radio]");
+          radios.forEach(r => r.disabled = true);
+
+          markOptions(q, picked);
+          el("submitBtn").classList.add("hidden");
+          el("explainWrap").classList.remove("hidden");
+          el("explanation").innerHTML = q.explanationHtml || "<i>(No explanation)</i>";
+
+          // show correct/wrong feedback
+          if (picked != null) {
+            let msg = saved.correct === true ? "Correct ✅" : "Wrong ❌";
+            let cls = saved.correct === true ? "good" : "bad";
+            el("feedback").textContent = msg;
+            el("feedback").style.display = "block";
+            el("feedback").className = cls;
+          } else {
+            el("feedback").textContent = "You skipped this question.";
+            el("feedback").style.display = "block";
+            el("feedback").className = "";
+          }
+
+          if (session.idx < session.ids.length - 1)
+            el("nextBtn").classList.remove("hidden");
+          else el("finishBtn").classList.remove("hidden");
+        }
       }
 
       function getSelectedIndex() {
@@ -965,6 +1085,9 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         const q = getQuestionById(qid);
         const picked = getSelectedIndex();
 
+        // if already answered before, don't re-count in stats
+        const alreadyAnswered = session.answers[qid] && session.answers[qid].choice != null;
+
         let isCorrect = null;
         if (picked == null) isCorrect = null;
         else if (q.correctIndex != null) isCorrect = picked === q.correctIndex;
@@ -972,30 +1095,26 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         session.answers[qid] = { choice: picked, correct: isCorrect };
 
         const key = String(qid);
-        const r = state.byId[key] || {
-          a: 0,
-          c: 0,
-          w: 0,
-          lc: null,
-          lr: null,
-          ls: null,
-        };
-        r.a = (r.a || 0) + 1;
-        r.lc = picked;
-        r.ls = Date.now();
-        if (isCorrect === true) {
-          r.c = (r.c || 0) + 1;
-          r.lr = true;
-        } else if (isCorrect === false) {
-          r.w = (r.w || 0) + 1;
-          r.lr = false;
-        } else {
-          r.lr = null;
+        if (!alreadyAnswered) {
+          const r = state.byId[key] || {
+            a: 0, c: 0, w: 0, lc: null, lr: null, ls: null,
+          };
+          r.a = (r.a || 0) + 1;
+          r.lc = picked;
+          r.ls = Date.now();
+          if (isCorrect === true) {
+            r.c = (r.c || 0) + 1;
+            r.lr = true;
+          } else if (isCorrect === false) {
+            r.w = (r.w || 0) + 1;
+            r.lr = false;
+          } else {
+            r.lr = null;
+          }
+          state.byId[key] = r;
+          saveState();
+          renderStats();
         }
-        state.byId[key] = r;
-
-        saveState();
-        renderStats();
 
         let msg = "Unanswered.";
         let cls = "";
@@ -1026,7 +1145,10 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         session.idx += 1;
         renderQuestion();
       }
-
+      function prevQuestion() {
+        session.idx -= 1;
+        renderQuestion();
+      }
       function finishTest() {
         let correct = 0,
           wrong = 0,
@@ -1055,6 +1177,20 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
           finishedAt: Date.now(),
         };
         saveState();
+         // ✅ Save to Test Library
+state.testLibrary.push({
+  name: session.name || "Unnamed Test",
+  ids: session.ids.slice(),
+  answers: session.answers,
+  correct,
+  wrong,
+  unanswered,
+  score,
+  finishedAt: Date.now()
+});
+
+saveState();
+renderTestLibrary();
 
         el("test").style.display = "none";
         el("results").style.display = "block";
@@ -1077,14 +1213,49 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         }
 
         const picked = shuffleInPlace(elig.slice()).slice(0, TEST_SIZE);
-        session = { ids: picked.map((q) => q.id), idx: 0, answers: {} };
+        const testName = el("testNameInput").value.trim() || 
+                 "Test " + new Date().toLocaleString();
 
-        el("results").style.display = "none";
-        el("test").style.display = "block";
-        renderQuestion();
+        const newSession = { 
+          ids: picked.map((q) => q.id), 
+          idx: 0, 
+          answers: {},
+          name: testName,
+          topic: el("topicInput").value.trim() || "All Topics",
+          subTopic: el("subTopicSelect").value.trim() || "",
+          subSubTopic: el("subSubTopicSelect").value.trim() || ""
+        };
+
+        localStorage.setItem("mcq_active_session", JSON.stringify(newSession));
+        window.open("test.html", "_blank");
       }
 
       function quitTest() {
+        if (!session) return;
+        if (confirm("Save this test to library before quitting?")) {
+          let correct = 0, wrong = 0, unanswered = 0;
+          for (const id of session.ids) {
+            const a = session.answers[id];
+            if (!a || a.choice == null) unanswered++;
+            else if (a.correct === true) correct++;
+            else wrong++;
+          }
+          const total = session.ids.length;
+          const score = total ? Math.round((correct / total) * 100) : 0;
+          state.testLibrary.push({
+            name: session.name || "Unnamed Test",
+            ids: session.ids.slice(),
+            answers: session.answers,
+            correct,
+            wrong,
+            unanswered,
+            score,
+            finishedAt: Date.now()
+          });
+          saveState();
+          renderTestLibrary();
+          renderTopicProgress();
+        }
         session = null;
         el("test").style.display = "none";
       }
@@ -1129,10 +1300,11 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
 
       function resetRecord() {
         if (!confirm("Reset study record?")) return;
-        state = { v: 1, byId: {}, lastTest: null };
+        state = { v: 1, byId: {}, lastTest: null, testLibrary: [] };
         saveState();
         renderStats();
         refreshPoolInfo();
+        renderTestLibrary();
         setStatus("Study record reset.", "ok", 1200);
       }
 
@@ -1142,6 +1314,7 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
         buildDeckList();
         renderStats();
         refreshPoolInfo();
+        renderTestLibrary();
 
         el("startBtn").addEventListener("click", startTest);
         el("poolSelect").addEventListener("change", refreshPoolInfo);
@@ -1149,6 +1322,7 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
           setTimeout(refreshPoolInfo, 100),
         );
 
+        el("prevBtn").addEventListener("click", prevQuestion);
         el("submitBtn").addEventListener("click", submitAnswer);
         el("nextBtn").addEventListener("click", nextQuestion);
         el("finishBtn").addEventListener("click", finishTest);
@@ -1218,7 +1392,193 @@ function buildSubSubHeadingList(mainHeading, subHeading) {
           );
         }
       }
+function renderTopicProgress() {
+        const listEl = el("topicProgressList");
+        listEl.innerHTML = "";
 
+        // build topic tree: main -> subheading -> subtopic -> { total, attempted, correct, wrong }
+        const tree = {};
+
+        MCQS.forEach(q => {
+          const main = getMainHeading(q.deck) || "Uncategorized";
+          const sub = getSubHeading(q.deck) || "General";
+          const subsub = getSubSubHeading(q.deck) || "General";
+
+          if (!tree[main]) tree[main] = {};
+          if (!tree[main][sub]) tree[main][sub] = {};
+          if (!tree[main][sub][subsub]) tree[main][sub][subsub] = { total: 0, attempted: 0, correct: 0, wrong: 0 };
+
+          const node = tree[main][sub][subsub];
+          node.total++;
+
+          const r = state.byId[String(q.id)];
+          if (r && (r.a || 0) > 0) {
+            node.attempted++;
+            node.correct += (r.c || 0);
+            node.wrong += (r.w || 0);
+          }
+        });
+
+        const mainTopics = Object.keys(tree).sort();
+
+        if (mainTopics.length === 0) {
+          listEl.textContent = "No topic data available.";
+          return;
+        }
+
+        mainTopics.forEach(main => {
+          const block = document.createElement("div");
+          block.className = "topic-block";
+
+          // compute main topic totals
+          let mainTotal = 0, mainAttempted = 0, mainCorrect = 0;
+          Object.values(tree[main]).forEach(subObj => {
+            Object.values(subObj).forEach(node => {
+              mainTotal += node.total;
+              mainAttempted += node.attempted;
+              mainCorrect += node.correct;
+            });
+          });
+          const mainAcc = mainAttempted > 0 ? Math.round((mainCorrect / mainAttempted) * 100) : null;
+          const mainPct = Math.round((mainAttempted / mainTotal) * 100);
+
+          // main topic header
+          const mainLabel = document.createElement("div");
+          mainLabel.className = "topic-main";
+          mainLabel.textContent = `▶ ${main} (${mainAttempted}/${mainTotal} attempted${mainAcc !== null ? " · " + mainAcc + "% acc" : ""})`;
+
+          const subContainer = document.createElement("div");
+          subContainer.className = "topic-sub";
+          subContainer.style.display = "none";
+
+          mainLabel.addEventListener("click", () => {
+            subContainer.style.display = subContainer.style.display === "none" ? "block" : "none";
+            mainLabel.textContent = mainLabel.textContent.startsWith("▶")
+              ? mainLabel.textContent.replace("▶", "▼")
+              : mainLabel.textContent.replace("▼", "▶");
+          });
+
+          // main progress bar
+          const mainBarWrap = document.createElement("div");
+          mainBarWrap.className = "topic-progress-bar";
+          mainBarWrap.style.marginBottom = "4px";
+          const mainBarFill = document.createElement("div");
+          mainBarFill.style.width = mainPct + "%";
+          mainBarFill.className = mainAcc === null ? "" : mainAcc >= 70 ? "high" : mainAcc >= 50 ? "mid" : "low";
+          mainBarWrap.appendChild(mainBarFill);
+
+          block.appendChild(mainLabel);
+          block.appendChild(mainBarWrap);
+
+          // sub headings
+          Object.keys(tree[main]).sort().forEach(sub => {
+            const subHeadEl = document.createElement("div");
+            subHeadEl.className = "topic-sub-heading";
+            subHeadEl.textContent = sub;
+            subContainer.appendChild(subHeadEl);
+
+            // sub sub topics
+            Object.keys(tree[main][sub]).sort().forEach(subsub => {
+              const node = tree[main][sub][subsub];
+              const acc = node.attempted > 0 ? Math.round((node.correct / node.attempted) * 100) : null;
+              const pct = Math.round((node.attempted / node.total) * 100);
+
+              const row = document.createElement("div");
+              row.className = "topic-row";
+
+              const rowLabel = document.createElement("div");
+              rowLabel.className = "topic-row-label";
+              rowLabel.innerHTML = `<span>${subsub}</span><span>${node.attempted}/${node.total}${acc !== null ? " · " + acc + "% acc" : ""}</span>`;
+
+              const barWrap = document.createElement("div");
+              barWrap.className = "topic-progress-bar";
+              const barFill = document.createElement("div");
+              barFill.style.width = pct + "%";
+              barFill.className = acc === null ? "" : acc >= 70 ? "high" : acc >= 50 ? "mid" : "low";
+              barWrap.appendChild(barFill);
+
+              row.appendChild(rowLabel);
+              row.appendChild(barWrap);
+              subContainer.appendChild(row);
+            });
+          });
+
+          block.appendChild(subContainer);
+          listEl.appendChild(block);
+        });
+      }
+      function renderTestLibrary() {
+  const listEl = el("testLibraryList");
+  listEl.innerHTML = "";
+
+  if (!state.testLibrary || state.testLibrary.length === 0) {
+    listEl.textContent = "No saved tests yet.";
+    return;
+  }
+
+  state.testLibrary.forEach((t, i) => {
+    const div = document.createElement("div");
+    div.style.marginBottom = "8px";
+    div.innerHTML = `
+      <b>${t.name}</b> ${t.paused ? '<span style="color:#e67e22;font-size:12px;">⏸ Paused</span>' : ''}<br>
+      <span style="font-size:12px;color:#555;">📁 ${t.topic || "All Topics"}${t.subTopic ? " › " + t.subTopic : ""}${t.subSubTopic ? " › " + t.subSubTopic : ""}</span>
+      &nbsp;<small style="color:#888;">${new Date(t.finishedAt).toLocaleDateString()}</small><br>
+      Score: ${t.score}% (${t.correct}✅ / ${t.wrong}❌ / ${t.unanswered}❓)<br>
+      ${t.paused 
+        ? `<button onclick="resumePausedTest(${i})">▶ Resume</button>` 
+        : `<button onclick="reviewTest(${i})">Review</button>`
+      }
+    `;
+    listEl.appendChild(div);
+  });
+}
+
+function resumePausedTest(index) {
+  const saved = state.testLibrary[index];
+  if (!saved) return;
+
+  const resumeSession = {
+    ids: saved.ids.slice(),
+    idx: saved.pausedAt || 0,
+    answers: saved.answers,
+    timePerQuestion: saved.timePerQuestion || {},
+    totalTimeElapsed: saved.totalTimeElapsed || 0,
+    name: saved.name,
+    topic: saved.topic || "",
+    subTopic: saved.subTopic || "",
+    subSubTopic: saved.subSubTopic || ""
+  };
+
+  state.testLibrary.splice(index, 1);
+  saveState();
+  renderTestLibrary();
+
+  localStorage.setItem("mcq_active_session", JSON.stringify(resumeSession));
+  window.open("test.html", "_blank");
+}
+function reviewTest(index) {
+  const saved = state.testLibrary[index];
+  if (!saved) return;
+
+  const reviewSession = {
+    ids: saved.ids.slice(),
+    idx: 0,
+    answers: saved.answers,
+    timePerQuestion: saved.timePerQuestion || {},
+    name: saved.name,
+    mode: "review"
+  };
+
+  localStorage.setItem("mcq_active_session", JSON.stringify(reviewSession));
+  window.open("test.html", "_blank");
+}
+
+function deleteTest(index) {
+  if (!confirm("Delete this test?")) return;
+  state.testLibrary.splice(index, 1);
+  saveState();
+  renderTestLibrary();
+}
       init();
     </script>
   </body>
