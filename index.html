@@ -591,6 +591,9 @@ input, select, button {
 
       const TEST_SIZE = 40;
       const STORAGE_KEY = "mcqStudyRecord_v1";
+const JSONBIN_BIN_ID = "69ae939bd0ea881f40ff8f88";
+const JSONBIN_API_KEY = "$2a$10$chr8amG4QHqGXw3TRyWj1uTEvTFCzUlcmrONNWTclUMvp1q2ViyJe";
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/69ae939bd0ea881f40ff8f88`;
 
       const MCQS = (window.MCQS || []).map((q) => ({
         id: q.i,
@@ -628,29 +631,60 @@ input, select, button {
       }
 
       function loadState() {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const st = safeJsonParse(raw, null) || {
-  v: 1,
-  byId: {},
-  lastTest: null,
-  testLibrary: []   // 👈 NEW
-};
-if (!st.testLibrary) st.testLibrary = [];
-        if (!st.byId) st.byId = {};
-        return st;
-      }
-      let state = loadState();
+  const raw = localStorage.getItem(STORAGE_KEY);
+  const st = safeJsonParse(raw, null) || { v: 1, byId: {}, lastTest: null, testLibrary: [] };
+  if (!st.testLibrary) st.testLibrary = [];
+  if (!st.byId) st.byId = {};
+  return st;
+}
+let state = loadState();
 
-      function saveState() {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch (e) {
-          setStatus(
-            "Could not save progress (browser blocked storage).",
-            "warn",
-          );
-        }
+async function syncFromServer() {
+  try {
+    const res = await fetch(JSONBIN_URL + "/latest", {
+      headers: { "X-Master-Key": JSONBIN_API_KEY }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const remote = data.record;
+    if (!remote || !remote.byId) return;
+    for (const id in remote.byId) {
+      const r = remote.byId[id];
+      const local = state.byId[id];
+      if (!local || (r.a || 0) >= (local.a || 0)) {
+        state.byId[id] = r;
       }
+    }
+    if (remote.testLibrary && remote.testLibrary.length > state.testLibrary.length) {
+      state.testLibrary = remote.testLibrary;
+    }
+    if (remote.lastTest) state.lastTest = remote.lastTest;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderStats();
+    refreshPoolInfo();
+    setStatus("Progress synced ✓", "ok", 3000);
+  } catch (e) {
+    setStatus("Could not sync from server. Using local data.", "warn", 4000);
+  }
+}
+
+let _saveTimer = null;
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      await fetch(JSONBIN_URL, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_API_KEY
+        },
+        body: JSON.stringify(state)
+      });
+    } catch (e) {}
+  }, 1500);
+}
 
       function shuffleInPlace(arr) {
         for (let i = arr.length - 1; i > 0; i--) {
@@ -1391,6 +1425,7 @@ renderTestLibrary();
             "warn",
           );
         }
+        syncFromServer();
       }
 function renderTopicProgress() {
         const listEl = el("topicProgressList");
