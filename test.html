@@ -138,6 +138,39 @@
     }
     #explanation { margin-top: 10px; font-size: 16px; line-height: 1.6; }
 
+/* Table styles for explanation section */
+#explanation table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 15px;
+}
+#explanation table th,
+#explanation table td {
+  border: 1px solid #c0cfe8;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+#explanation table th {
+  background: #e8eef7;
+  font-weight: 700;
+  color: #1a3a5c;
+}
+#explanation table tr:nth-child(even) td {
+  background: #f5f8fd;
+}
+#explanation table tr:hover td {
+  background: #eef3fb;
+}
+#explanation table caption {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 6px;
+  color: #1a3a5c;
+  text-align: center;
+}
+
     /* RESULTS PAGE */
     #results {
       display: none; padding: 40px; text-align: center;
@@ -162,7 +195,33 @@
     .res-actions button:hover { background: #f0f4fa; }
 
     .hidden { display: none !important; }
-
+#aiBox {
+  margin-top: 14px;
+  border: 1.5px solid #c0cfe8;
+  border-radius: 10px;
+  background: white;
+  overflow: hidden;
+}
+#aiBox .ai-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: #f0f6ff;
+  border-bottom: 1px solid #c0cfe8;
+}
+#aiBox .ai-header span { font-weight: 700; font-size: 14px; color: #1a3a5c; }
+#askAiBtn {
+  background: #2c76b3; color: white; border: none;
+  padding: 6px 16px; border-radius: 6px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+#askAiBtn:hover { background: #1f5a8a; }
+#askAiBtn:disabled { background: #aaa; cursor: default; }
+#aiResponse {
+  padding: 14px 16px;
+  font-size: 15px; line-height: 1.7;
+  color: #222; white-space: pre-wrap;
+  display: none;
+}
     @media (max-width: 600px) {
       #sidebar { width: 44px; }
       .qnum-btn { width: 30px; height: 30px; font-size: 10px; }
@@ -213,6 +272,14 @@
         <summary>Explanation</summary>
         <div id="explanation"></div>
       </details>
+
+      <div id="aiBox" style="display:none;">
+        <div class="ai-header">
+          <span>🤖 AI Explanation</span>
+          <button id="askAiBtn">Ask AI</button>
+        </div>
+        <div id="aiResponse"></div>
+      </div>
     </div>
 
   </div>
@@ -235,6 +302,7 @@
   <script>
     "use strict";
     const STORAGE_KEY = "mcqStudyRecord_v1";
+const CLAUDE_API_KEY = "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";
 
     const MCQS = (window.MCQS || []).map((q) => ({
       id: q.i, deck: q.d || "", tags: q.t || [],
@@ -419,6 +487,8 @@
       el("submitBtn").classList.remove("hidden");
       el("submitArea").classList.remove("hidden");
       el("qTimeDisplay").style.display = "none";
+      el("aiBox").style.display = "none";
+      el("aiResponse").style.display = "none";
 
       startQTimer();
 
@@ -439,6 +509,10 @@
         markOptions(q, already.choice);
         el("submitBtn").classList.add("hidden");
         el("submitArea").classList.add("hidden");
+el("aiBox").style.display = "block";
+      el("aiResponse").style.display = "none";
+      el("askAiBtn").textContent = "Ask AI";
+      el("askAiBtn").disabled = false;
         el("explainWrap").classList.remove("hidden");
         el("explanation").innerHTML = q.explanationHtml || "<i>(No explanation)</i>";
         let msg = already.correct === true ? "Correct ✅" : "Wrong ❌";
@@ -469,6 +543,10 @@
         }
         el("submitBtn").classList.add("hidden");
         el("submitArea").classList.add("hidden");
+        el("aiBox").style.display = "block";
+        el("aiResponse").style.display = "none";
+        el("askAiBtn").textContent = "Ask AI";
+        el("askAiBtn").disabled = false;
         el("explainWrap").classList.remove("hidden");
         el("explanation").innerHTML = q.explanationHtml || "<i>(No explanation)</i>";
       }
@@ -513,6 +591,10 @@
       el("explainWrap").classList.remove("hidden");
       el("submitBtn").classList.add("hidden");
       el("submitArea").classList.add("hidden");
+      el("aiBox").style.display = "block";
+      el("aiResponse").style.display = "none";
+      el("askAiBtn").textContent = "Ask AI";
+      el("askAiBtn").disabled = false;
 
       stopQTimer(qid);
       const qSecs = session.timePerQuestion[qid] || 0;
@@ -604,6 +686,79 @@
       session.idx += 1;
       startQTimer();
       renderQuestion();
+    });
+
+async function askAI() {
+      const btn = el("askAiBtn");
+      const responseBox = el("aiResponse");
+      const qid = session.ids[session.idx];
+      const q = getQuestionById(qid);
+      const ans = session.answers[qid];
+
+      const optionLetters = ["A", "B", "C", "D", "E"];
+      const optionsText = q.optionsHtml.map((o, i) => {
+        const letter = optionLetters[i] || (i+1);
+        const text = o.replace(/<[^>]+>/g, "").trim();
+        return `${letter}. ${text}`;
+      }).join("\n");
+
+      const questionText = q.questionHtml.replace(/<[^>]+>/g, "").trim();
+      const correctLetter = optionLetters[(q.correctIndex || 1) - 1];
+      const pickedLetter = ans && ans.choice != null ? optionLetters[ans.choice - 1] : "Not answered";
+      const wasCorrect = ans ? ans.correct : null;
+
+      const prompt = `You are a medical/exam tutor. A student just answered an MCQ question.
+
+Question:
+${questionText}
+
+Options:
+${optionsText}
+
+Correct Answer: ${correctLetter}
+Student's Answer: ${pickedLetter} (${wasCorrect === true ? "Correct ✅" : wasCorrect === false ? "Wrong ❌" : "Skipped"})
+
+Please explain:
+1. Why the correct answer is right
+2. Why the other options are wrong (briefly)
+3. A key concept to remember
+
+Keep it clear and concise.`;
+
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      responseBox.style.display = "block";
+      responseBox.textContent = "⏳ Getting AI explanation...";
+
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 600,
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+        const data = await res.json();
+        const text = data.content && data.content[0] ? data.content[0].text : "No response.";
+        responseBox.textContent = text;
+        btn.textContent = "Ask Again";
+        btn.disabled = false;
+      } catch(e) {
+        responseBox.textContent = "❌ Error getting AI response. Check your API key.";
+        btn.textContent = "Retry";
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      if (e.target.id === "askAiBtn") askAI();
     });
 
     if (session) {
